@@ -1,0 +1,13 @@
+# Ignore big model files
+medical_ai_model_package.pkl
+medical-ner-model/
+*.bin
+*.safetensors
+*.pt
+*.pkl
+
+# Ignore cache/temp
+__pycache__/
+*.log
+*.tmp
+*.ipynb_checkpoints/
