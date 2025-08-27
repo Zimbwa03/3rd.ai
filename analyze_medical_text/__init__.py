@@ -1,88 +1,79 @@
 import azure.functions as func
 import json
 import os
-import pickle
 import logging
-from azure.storage.blob import BlobServiceClient
-
-# Try loading model once at startup
-medical_ai = None
-
-def load_model():
-    try:
-        logging.info("🔄 Attempting to load model from Blob Storage...")
-
-        # Ensure the environment variable is set
-        blob_connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-        if not blob_connection_string:
-            logging.error("❌ Missing AZURE_STORAGE_CONNECTION_STRING in Application Settings")
-            return None
-
-        # Connect to container
-        blob_service_client = BlobServiceClient.from_connection_string(blob_connection_string)
-        container_client = blob_service_client.get_container_client("models")
-
-        # Download file into /tmp (only writeable folder in Azure Functions)
-        local_path = "/tmp/medical_ai_model_package.pkl"
-        blob_client = container_client.get_blob_client("medical_ai_model_package.pkl")
-
-        logging.info("⬇️ Downloading model blob...")
-        with open(local_path, "wb") as f:
-            f.write(blob_client.download_blob().readall())
-
-        # Load pickle
-        with open(local_path, "rb") as f:
-            logging.info("✅ Model file loaded successfully.")
-            return pickle.load(f)
-
-    except Exception as e:
-        logging.error(f"❌ Error while loading model: {e}")
-        return None
-
-
-# Load model package at startup
-model_package = load_model()
-if model_package and "medical_ai" in model_package:
-    medical_ai = model_package["medical_ai"]
-    logging.info("✅ medical_ai object is ready")
-else:
-    logging.warning("⚠️ medical_ai not found in model package")
-
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
+    """Simple test function to isolate the issue"""
     try:
-        body = req.get_json()
-        text = body.get("text", "")
-
-        if not text:
-            return func.HttpResponse(
-                json.dumps({"error": "No text provided"}),
-                mimetype="application/json",
-                status_code=400
-            )
-
-        if not medical_ai:
-            # Model didn’t load
-            return func.HttpResponse(
-                json.dumps({"error": "Model not loaded. Check Blob storage or pickle format."}),
-                mimetype="application/json",
-                status_code=500
-            )
-
-        # Call your model safely
-        logging.info(f"Analyzing text: {text}")
-        result = medical_ai.analyze_conversation(text)
-
+        logging.info("=== FUNCTION STARTED ===")
+        
+        # Test 1: Basic response
+        logging.info("Test 1: Function is working")
+        
+        # Test 2: Environment variables
+        connection_string = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+        logging.info(f"Test 2: Connection string exists: {connection_string is not None}")
+        
+        # Test 3: Get request parameters
+        text = req.params.get('text', 'No text provided')
+        method = req.method
+        logging.info(f"Test 3: Method={method}, Text parameter={text}")
+        
+        # Test 4: Try blob storage connection (without downloading)
+        blob_test_result = "Not tested"
+        try:
+            if connection_string:
+                from azure.storage.blob import BlobServiceClient
+                blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+                # Just test the connection, don't download anything
+                containers = list(blob_service_client.list_containers(max_results=1))
+                blob_test_result = f"Connection successful, found containers: {len(containers)}"
+            else:
+                blob_test_result = "No connection string"
+        except Exception as blob_error:
+            blob_test_result = f"Blob connection failed: {str(blob_error)}"
+        
+        logging.info(f"Test 4: Blob storage test: {blob_test_result}")
+        
+        # Return test results
+        response_data = {
+            "status": "success",
+            "message": "Test function working",
+            "tests": {
+                "function_working": True,
+                "connection_string_exists": connection_string is not None,
+                "request_method": method,
+                "text_parameter": text,
+                "blob_storage_test": blob_test_result
+            }
+        }
+        
+        logging.info("=== FUNCTION COMPLETED SUCCESSFULLY ===")
+        
         return func.HttpResponse(
-            json.dumps(result),
+            json.dumps(response_data, indent=2),
             mimetype="application/json",
             status_code=200
         )
-
+        
     except Exception as e:
-        logging.error(f"❌ Error in function execution: {e}")
+        logging.error(f"=== FUNCTION FAILED ===")
+        logging.error(f"Error: {str(e)}")
+        logging.error(f"Error type: {type(e).__name__}")
+        
+        # Get full traceback
+        import traceback
+        full_traceback = traceback.format_exc()
+        logging.error(f"Full traceback: {full_traceback}")
+        
         return func.HttpResponse(
-            json.dumps({"error": str(e)}),
+            json.dumps({
+                "status": "error",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "traceback": full_traceback
+            }, indent=2),
             mimetype="application/json",
             status_code=500
         )
